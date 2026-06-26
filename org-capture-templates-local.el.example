@@ -1,0 +1,56 @@
+;;; org-capture-templates-local.el.example --- template for org-capture templates -*- lexical-binding: t -*-
+;; Copy to org-capture-templates-local.el (gitignored) and replace the generic
+;; names/paths below with your own. Loaded by init.el; this .example is used as
+;; a fallback when org-capture-templates-local.el does not exist.
+;;
+;; %(itsf/capture-agenda-heading) and %(itsf/capture-gcal-source-event-link)
+;; are helper functions defined in init.el.
+
+(setq org-capture-templates
+      '(
+        ("a" "Client")
+        ("at" "TODO" entry (file "~/org-notes/work/client/client.org") "* TODO %?\n OPENED: %T")
+        ("am" "Metrics call notes" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :reporting:metrics:observability:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("ar" "Own team retro notes" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :team_flow:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("ax" "Other team retro notes" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :team_flow:cross_team:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("as" "Stakeholder reporting notes" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :reporting:admin:team_flow:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("ap" "Planning notes" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :admin:planning:team_flow:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("ad" "Weekly demos notes" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :cross_team:self_context:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("ay" "Sync" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  :team_flow:admin:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n %?")
+        ("ao" "Meeting other" entry (file "~/org-notes/work/client/client.org")
+         "* %(itsf/capture-agenda-heading)  %?\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n")
+        ("t" "Work")
+        ("td" "normal TODO" entry (file "~/org-notes/work/work.org") "* TODO %?\n OPENED: %T")
+        ("ti" "Improvement todo" entry (file+headline "~/org-notes/work/work_improvement_todos.org" "Work improvement TODOs") "** TODO %?\n  OPENED: %T ")
+        ("tt" "Team lead call" entry (file "~/org-notes/work/work.org")
+         "* %(itsf/capture-agenda-heading)  :management:team:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("tm" "report one-to-one" entry (file "~/org-notes/work/work.org")
+         "* %(itsf/capture-agenda-heading)  :management:team:%?\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n")
+        ("tu" "manager upwards one-to-one" entry (file "~/org-notes/work/work.org")
+         "* %(itsf/capture-agenda-heading)  :managed:team:manager:\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n  %?")
+        ("to" "meeting other" entry (file "~/org-notes/work/work.org")
+         "* %(itsf/capture-agenda-heading)  %?\n  :PROPERTIES:\n  :SOURCE_EVENT: %(itsf/capture-gcal-source-event-link)\n  :END:\n")
+
+
+        ("h" "Home todo" entry (file+headline "~/org-notes/home.org" "TODOs") "** TODO %?\n  opened: %<%Y/%m/%d> ")
+        ("p" "Personal" entry (file "~/org-notes/personal tasks.org") "* TODO %?\n  OPENED: %T ")
+        ("f" "Fun TODO" entry (file+headline "~/org-notes/home.org" "Fun") "** TODO %?\n  opened: %<%Y/%m/%d> ")
+        ("F" "High Five" entry (file+headline "~/org-notes/work/highfive.org" "To capture") "** TODO %?\n  opened: %<%Y/%m/%d> ")
+        ("b" "Bookmark" entry (file+headline "~/org-notes/bookmarks.org" "Unsorted") "*** TODO DESCRIPTION%? \n URL \n captured: %<%Y/%m/%d> ")
+        ("s" "Solargraph TODO" entry (file+headline "~/org-notes/solargraph.org" "TODOs") "** TODO %? \n    captured: %<%Y/%m/%d> ")
+        ("c" "Random code project idea" entry (file+headline "~/org-notes/random_code_project_maybes.org" "Maybes") "** %? \n    captured: %<%Y/%m/%d> ")
+        ("e" "Good things to emulate" entry (file+headline "~/org-notes/work/emulate.org" "Colleague examples to emulate") "** %? \n    captured: %<%Y/%m/%d> ")
+        ("E" "New developer expectation idea" entry (file "~/org-notes/work/new_expectations.org") "* TODO %? \n    captured: %<%Y/%m/%d> ")
+        ("l" "Blog ideas" entry (file+headline "~/org-notes/blog/ideas.org" "Blog post ideas for Real Soon Now") "** %? \n    captured: %<%Y/%m/%d> ")
+        ("W" "Project TODO" entry (file "~/org-notes/projects/project/project.org") "* TODO %? \n    captured: %<%Y/%m/%d> ")
+        ))
+
+(provide 'org-capture-templates-local)
+;;; org-capture-templates-local.el.example ends here

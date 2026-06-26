@@ -1,0 +1,13 @@
+;;; org-gcal-local.el.example --- template for machine-local org-gcal values -*- lexical-binding: t -*-
+;; Copy to org-gcal-local.el (gitignored) and fill in your own values.
+;; Loaded by emacs-org-gcal-core.el.
+
+;; Email/GPG recipient used to encrypt the oauth2 plstore.
+(setq itsf/org-gcal-encrypt-to "you@example.com")
+
+;; Alist of (CALENDAR-ID . ORG-FILE) to fetch into.
+(setq itsf/org-gcal-fetch-file-alist
+      '(("you@example.com" . "~/path/to/calendar.org")))
+
+(provide 'org-gcal-local)
+;;; org-gcal-local.el.example ends here

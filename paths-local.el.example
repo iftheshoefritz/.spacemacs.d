@@ -1,0 +1,19 @@
+;;; paths-local.el.example --- template for machine-local note paths -*- lexical-binding: t -*-
+;; Copy to paths-local.el (gitignored) and replace the generic values below
+;; with your own. Loaded near the top of dotspacemacs/user-config; this
+;; .example is used as a fallback when paths-local.el does not exist.
+
+;; Root of the org notes tree (agenda scan, capture, LLM logs).
+(setq itsf/org-notes-directory "~/org-notes")
+
+;; org-roam database/notes directory.
+(setq itsf/org-roam-directory "~/org-roam-notes")
+
+;; The current client's notes file (used by the agenda jump + capture helpers).
+(setq itsf/client-notes-file "~/org-notes/work/client/client.org")
+
+;; Org tag identifying the current client, for the "Done <client>" agenda view.
+(setq itsf/client-agenda-tag "CLIENT")
+
+(provide 'paths-local)
+;;; paths-local.el.example ends here
