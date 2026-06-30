@@ -998,7 +998,8 @@ topmost headings in the region start at column 0."
               nested))))))
     (advice-add 'ghostel--terminfo-directory :override #'itsf/ghostel--terminfo-directory))
   (with-eval-after-load 'claude-code-ide
-    (setq claude-code-ide-terminal-backend 'ghostel))
+    (setq claude-code-ide-terminal-backend 'ghostel)
+    (setq claude-code-ide-use-ide-diff nil))
   ;; Override spacemacs-layouts/non-restricted-buffer-list-helm to require
   ;; helm-buffers before the let binding, so defcustom helm-buffer-list-reorder-fn
   ;; runs (declaring it special/dynamic) before the lexical let can grab it.
