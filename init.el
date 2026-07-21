@@ -1423,11 +1423,22 @@ the parent reverts the buffer if it's open and unmodified."
         ;; is a single-shot cursor that gets corrupted when shared between this
         ;; child and the long-lived interactive Emacs: they diverge, deltas get
         ;; dropped, and the fetch silently no-ops (ok · Δ+0 bytes) while new
-        ;; events never land. Clearing the token here makes each fetch a
-        ;; complete, self-healing download that can't drift. entry-id values are
-        ;; deterministic from the Google event id, so gcal: links in notes files
-        ;; keep resolving across full rewrites. A full rewrite is fine here.
+        ;; events never land. Clearing the token makes each fetch a complete
+        ;; download that can't drift. entry-id values are deterministic from the
+        ;; Google event id, so gcal: links in notes files keep resolving across
+        ;; rewrites.
+        ;;
+        ;; But a full (tokenless) list only ever returns *live* events; Google
+        ;; reports cancellations/deletions solely as syncToken deltas, which we
+        ;; just threw away. So the full sync alone can add and update but never
+        ;; prune — events cancelled in Google (e.g. a meeting rescheduled by
+        ;; replacing its series) linger in calendar.org indefinitely. Wiping the
+        ;; fetch window first (itsf/org-gcal-prune-fetch-window) turns the full
+        ;; sync into a true replace within its window, so cancelled events
+        ;; actually disappear. The prune is window-scoped, so out-of-window
+        ;; past/future entries survive. Order matters: prune, then sync.
         (setq org-gcal--sync-tokens nil)
+        (itsf/org-gcal-prune-fetch-window)
         (let* ((calfile (expand-file-name (cdar org-gcal-fetch-file-alist)))
                (size-before (if (file-exists-p calfile)
                                 (file-attribute-size (file-attributes calfile)) 0))

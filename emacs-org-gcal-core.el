@@ -82,6 +82,45 @@ by the file-local `org-agenda-entry-types' in calendar.org excluding :timestamp.
 (add-to-list 'org-gcal-after-update-entry-functions
              #'itsf/org-gcal-set-scheduled-from-event)
 
+(defun itsf/org-gcal-prune-fetch-window ()
+  "Delete org-gcal-managed entries whose SCHEDULED time is in the fetch window.
+Run in the background fetch child immediately before `org-gcal-sync', which is
+forced to a FULL (tokenless) sync. A full list request from Google only ever
+returns *live* events — it never reports a cancellation or deletion (those
+arrive solely as syncToken deltas). So org-gcal's full sync can add and update
+but can never prune, and events cancelled in Google linger in the file forever.
+
+Wiping the window first turns the full sync into a true replace: everything in
+[now - `org-gcal-up-days', now + `org-gcal-down-days'] is deleted, then the
+sync re-inserts exactly the events Google still considers live. A cancelled
+event is gone because nothing re-creates it. The wipe is scoped to the fetch
+window on purpose — entries outside it (past events awaiting archive, far-future
+events the fetch won't return) are left untouched so their `gcal:' links keep
+resolving. entry-id values are deterministic from the Google event id, so links
+into re-inserted in-window events keep resolving too."
+  (let ((up   (org-gcal--up-time))
+        (down (org-gcal--down-time)))
+    (dolist (cal org-gcal-fetch-file-alist)
+      (with-current-buffer (find-file-noselect (expand-file-name (cdr cal)))
+        (org-with-wide-buffer
+         (let ((markers nil))
+           (org-map-entries
+            (lambda ()
+              (when (string= (org-entry-get (point) org-gcal-managed-property)
+                             "gcal")
+                (let ((sched (org-get-scheduled-time (point))))
+                  (when (and sched
+                             (not (time-less-p sched up))
+                             (not (time-less-p down sched)))
+                    (push (point-marker) markers)))))
+            nil 'file)
+           ;; Delete bottom-up so earlier headings' positions stay valid.
+           (dolist (m (sort markers
+                            (lambda (a b) (> (marker-position a)
+                                             (marker-position b)))))
+             (goto-char m)
+             (org-cut-subtree))))))))
+
 ;; Workaround for https://github.com/rhaps0dy/emacs-oauth2-auto/issues/6
 (defun oauth2-auto--insert-break-on-secret-entries (&rest _args) nil)
 
