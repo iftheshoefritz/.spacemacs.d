@@ -1342,8 +1342,11 @@ If BUFFER-PREFIX is given, use it as the base buffer name, otherwise use the COM
       "$gd" 'itsf/remove-context
       )
     :config
-    (gptel-make-gh-copilot "Copilot")
-    ;; TODO I want this to be the copilot gpt-4.1, but gptel is choosing ChatGPT:gpt-4.1 instead; see https://github.com/karthink/gptel/issues/1122
+    ;; Make Copilot the active backend, not just a registered one. Without this
+    ;; `gptel-backend' stays at the built-in ChatGPT/OpenAI default, which does an
+    ;; auth-source lookup for api.openai.com and errors with
+    ;; "No `gptel-api-key' found in the auth source" (no OpenAI creds in authinfo).
+    (setq gptel-backend (gptel-make-gh-copilot "Copilot"))
     ;; TODO I tried haiku 4.5 and it wasn't great, but asking the model to tell me its version, it claimed to be sonnet 3.5. Not sure if the model has just hallucinated the Q that way or if gptel is misconfigured.
     (setq gptel-model 'gpt-4.1)
     (setq gptel-track-media t)
