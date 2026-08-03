@@ -672,7 +672,10 @@ It is mostly for variables that should be set before packages are loaded.
 If you are unsure, try setting them in `dotspacemacs/user-config' first."
   (setq-default git-magit-status-fullscreen t)
   (setq insert-directory-program (substitute-in-file-name "/usr/local/bin/gls"))
-  (setenv "CC" "/opt/homebrew/bin/gcc-15")
+  ;; Keep in step with `brew list --versions gcc` (and ~/bin/emacs-daemon):
+  ;; Homebrew deletes the old cellar on a major bump, and this setenv overrides
+  ;; whatever the daemon exported.
+  (setenv "CC" "/opt/homebrew/bin/gcc-16")
   (setq exec-path-from-shell-arguments '("-l" "-i"))
   (setq evil-want-minibuffer t) ; allow normal/evil mode in minibuffer
   (setq evil-want-Y-yank-to-eol nil)
