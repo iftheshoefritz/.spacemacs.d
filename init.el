@@ -1441,11 +1441,25 @@ the parent reverts the buffer if it's open and unmodified."
         ;; actually disappear. The prune is window-scoped, so out-of-window
         ;; past/future entries survive. Order matters: prune, then sync.
         (setq org-gcal--sync-tokens nil)
-        (itsf/org-gcal-prune-fetch-window)
         (let* ((calfile (expand-file-name (cdar org-gcal-fetch-file-alist)))
                (size-before (if (file-exists-p calfile)
                                 (file-attribute-size (file-attributes calfile)) 0))
+               ;; Snapshot taken *before* the prune, so a run that doesn't finish
+               ;; can be rolled back wholesale. The prune deletes the entire fetch
+               ;; window up front and relies on the sync to put it back, and
+               ;; org-gcal saves calendar.org while syncing — so a sync that errors
+               ;; or times out leaves the gutted (or half-refilled) window on disk,
+               ;; silently dropping events that are still live in Google. A later
+               ;; run doesn't reliably heal that: a full list only re-adds what
+               ;; Google returns, so an event being mutated in Google around the
+               ;; fetch can stay missing indefinitely. Restoring the snapshot makes
+               ;; prune+sync atomic: either the replace ran to completion, or
+               ;; calendar.org is exactly as it was.
+               (backup (expand-file-name "org-gcal-calendar-backup.org"
+                                         temporary-file-directory))
                (start (current-time)) (done nil) (result "ok"))
+          (when (file-exists-p calfile) (copy-file calfile backup t t))
+          (itsf/org-gcal-prune-fetch-window)
           (deferred:try
            (org-gcal-sync t t)
            :catch   (lambda (e) (setq result (format "error: %S" e)))
@@ -1461,6 +1475,13 @@ the parent reverts the buffer if it's open and unmodified."
             (while (< (float-time) drain-end)
               (accept-process-output nil 0.2)))
           (save-some-buffers t)
+          ;; Roll back after the save, not instead of it: org-gcal may already
+          ;; have written a partial window to disk during the sync, so the only
+          ;; reliable undo is to put the pre-prune file back.
+          (unless (string= result "ok")
+            (when (file-exists-p backup)
+              (copy-file backup calfile t t)
+              (setq result (concat result " · rolled back"))))
           (let ((size-after (if (file-exists-p calfile)
                                 (file-attribute-size (file-attributes calfile)) 0)))
             (format "%s in %.2fs · calendar.org %d→%d (Δ%+d bytes)"
