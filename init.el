@@ -92,7 +92,7 @@ This function should only modify configuration layer settings."
      (shell :variables
             shell-default-height 30
             shell-default-position 'bottom
-            shell-default-shell 'vterm
+            shell-default-shell 'ghostel
             shell-default-term-shell "/bin/zsh"
             )
      (ibuffer :variables ibuffer-group-buffers-by 'projects)
@@ -147,10 +147,6 @@ This function should only modify configuration layer settings."
                                       (code-review :location (recipe :fetcher github
                                                                      :repo "doomelpa/code-review"
                                                                      :commit "303edcfbad8190eccb9a9269dfc58ed26d386ba5"))
-                                      (vterm-anti-flicker-filter :location (recipe
-                                                                            :fetcher github
-                                                                            :repo "martinbaillie/vterm-anti-flicker-filter"
-                                                                            :files ("*.el")))
                                       (opencode :location (recipe
                                                            :fetcher github
                                                            :repo "colobas/opencode.el"
@@ -983,7 +979,20 @@ topmost headings in the region start at column 0."
           (javascript-backend . lsp)))
   (custom-set-faces
    '(highlight-parentheses-highlight ((nil (:weight ultra-bold))) t))
+  ;; The Spacemacs shell layer has no ghostel support, so `shell-default-shell'
+  ;; set to 'ghostel leaves `spacemacs/default-pop-shell' (SPC ') calling a
+  ;; nonexistent `spacemacs/shell-pop-ghostel'. Define it the same way the layer
+  ;; defines the vterm one. The "ghostel" name matters: shell-pop dispatches its
+  ;; autocd on that string (`shell-pop--cd-to-cwd-ghostel'), and it renames the
+  ;; created buffer to *ghostel-N*, which also stops ghostel's OSC-2 title
+  ;; tracking from renaming it afterwards.
+  ;; `projectile-run-ghostel' (SPC p ') already exists upstream in projectile.
+  (make-shell-pop-command "ghostel" ghostel)
+  (spacemacs/set-leader-keys "atsg" 'spacemacs/shell-pop-ghostel)
+  (spacemacs/register-repl 'ghostel 'ghostel)
+
   (with-eval-after-load 'ghostel
+    (setq ghostel-shell shell-default-term-shell)
     (defun itsf/ghostel--terminfo-directory ()
       (let* ((root (ghostel--resource-root))
              (dir (and root (expand-file-name "etc/terminfo" root))))
@@ -1231,101 +1240,100 @@ OWNER can be a substring, e.g., \"fritz\" will match \"iftheshoefritz\"."
       (mapc #'disable-theme custom-enabled-themes)
       (mapc (lambda (theme) (load-theme theme t)) original-themes)))
 
-  (defun itsf/start-vterm-numbered ()
-    "Start a vterm buffer in the project root."
-    (interactive)
-    (let ((project-root (or (projectile-project-root) (expand-file-name "~"))))
-      (if project-root
-          (let* ((base-buffer-name "*vterm*")
-                 (buffer-name base-buffer-name)
-                 (counter 0))
-            ;; Generate a unique buffer name
-            (setq buffer-name (format "%s [%d]" base-buffer-name counter))
-            (while (get-buffer buffer-name)
-              (setq counter (1+ counter))
-              (setq buffer-name (format "%s [%d]" base-buffer-name counter)))
-            ;; Create a new vterm buffer
-            (vterm buffer-name)
-            ;; Change to project root
-            (with-current-buffer buffer-name
-              (vterm-send-string (format "cd %s\n" project-root)))
-            ;; Switch to the newly created buffer
-            (switch-to-buffer buffer-name))
-        (message "Not in a Projectile project."))))
+  (defun itsf/ghostel--unique-buffer-name (base)
+    "Return \"BASE [N]\" for the lowest N with no existing buffer."
+    (let ((counter 0)
+          (name nil))
+      (setq name (format "%s [%d]" base counter))
+      (while (get-buffer name)
+        (setq counter (1+ counter))
+        (setq name (format "%s [%d]" base counter)))
+      name))
 
-  (defun itsf/start-vterm-command (command &optional buffer-prefix)
-    "Start a numbered vterm buffer in the project root, sending COMMAND.
+  (defun itsf/ghostel--start (base-buffer-name directory)
+    "Create a fresh ghostel terminal named after BASE-BUFFER-NAME in DIRECTORY.
+`ghostel' with no prefix arg reuses the single buffer named by
+`ghostel-buffer-name', so let-bind that to a numbered name (the same
+trick `ghostel-project' uses) to get one buffer per invocation.
+Terminal title tracking is disabled buffer-locally so ghostel does not
+rename the buffer out from under the numbering."
+    (require 'ghostel)
+    (let* ((name (itsf/ghostel--unique-buffer-name base-buffer-name))
+           (default-directory (file-name-as-directory directory))
+           (ghostel-buffer-name name)
+           (buffer (ghostel)))
+      (with-current-buffer buffer
+        (setq-local ghostel-set-title-function nil))
+      buffer))
+
+  (defun itsf/start-ghostel-numbered ()
+    "Start a ghostel terminal in the project root."
+    (interactive)
+    (itsf/ghostel--start
+     "*ghostel*"
+     (or (projectile-project-root) (expand-file-name "~"))))
+
+  (defun itsf/start-ghostel-command (command &optional buffer-prefix)
+    "Start a numbered ghostel terminal in the project root, sending COMMAND.
 If BUFFER-PREFIX is given, use it as the base buffer name, otherwise use the COMMAND."
     (let ((project-root (projectile-project-root)))
       (if project-root
-          (let* ((base-buffer-name (format "*%s*" (or buffer-prefix command)))
-                 (buffer-name nil)
-                 (counter 0))
-            ;; Generate a unique buffer name
-            (setq buffer-name (format "%s [%d]" base-buffer-name counter))
-            (while (get-buffer buffer-name)
-              (setq counter (1+ counter))
-              (setq buffer-name (format "%s [%d]" base-buffer-name counter)))
-            ;; Create a new vterm buffer
-            (vterm buffer-name)
-            ;; Change to project root and send the command
-            (with-current-buffer buffer-name
-              (vterm-send-string (format "cd %s\n" project-root))
-              (vterm-send-string (concat command "\n")))
-            ;; Switch to the newly created buffer
-            (switch-to-buffer buffer-name))
+          (with-current-buffer (itsf/ghostel--start
+                                (format "*%s*" (or buffer-prefix command))
+                                project-root)
+            (ghostel-send-string (concat command "\n")))
         (message "Not in a Projectile project."))))
 
   (defun itsf/start-console-flightctl (environment)
-    "Start flightctl console in a numbered vterm buffer."
+    "Start flightctl console in a numbered ghostel buffer."
     (interactive
      (list (completing-read "Select environment: " '("dev" "staging" "production") nil t "dev")))
-    (itsf/start-vterm-command
+    (itsf/start-ghostel-command
      (format "bin/aws-console -e %s" environment)
      (format "aws-rails c: %s" environment)))
 
   (defun itsf/start-psql-flightctl (environment)
-    "Start aws-psql in a numbered vterm buffer."
+    "Start aws-psql in a numbered ghostel buffer."
     (interactive
      (list (completing-read "Select environment: " '("dev" "staging" "production") nil t "dev")))
-    (itsf/start-vterm-command
+    (itsf/start-ghostel-command
      (format "bin/aws-psql -e %s" environment)
      (format "aws-psql: %s" environment)))
 
-  (defvar itsf/vterm-target-buffer nil
-    "Name of the last vterm buffer used for sending input.")
+  (defvar itsf/ghostel-target-buffer nil
+    "Name of the last ghostel buffer used for sending input.")
 
-  (defun itsf/send-region-to-vterm (start end)
-    "Send the region from START to END to a vterm buffer as input.
-      Prompts for a vterm buffer, defaulting to the last used one."
+  (defun itsf/send-region-to-ghostel (start end)
+    "Send the region from START to END to a ghostel buffer as input.
+      Prompts for a ghostel buffer, defaulting to the last used one."
     (interactive "r")
-    (let* ((vterm-bufs (seq-filter
-                        (lambda (b)
-                          (with-current-buffer b
-                            (derived-mode-p 'vterm-mode)))
-                        (buffer-list)))
-           (buf-names (mapcar #'buffer-name vterm-bufs))
-           (def (and itsf/vterm-target-buffer
-                     (member itsf/vterm-target-buffer buf-names)
-                     itsf/vterm-target-buffer))
-           (target (completing-read "Send to vterm buffer: " buf-names nil t nil nil def))
+    (let* ((bufs (seq-filter
+                  (lambda (b)
+                    (with-current-buffer b
+                      (derived-mode-p 'ghostel-mode)))
+                  (buffer-list)))
+           (buf-names (mapcar #'buffer-name bufs))
+           (def (and itsf/ghostel-target-buffer
+                     (member itsf/ghostel-target-buffer buf-names)
+                     itsf/ghostel-target-buffer))
+           (target (completing-read "Send to ghostel buffer: " buf-names nil t nil nil def))
            ;; Remove ONE trailing newline, if present
            (input (replace-regexp-in-string "\n\\'" "" (buffer-substring-no-properties start end))))
       (when (fboundp 'pulse-momentary-highlight-region)
         (pulse-momentary-highlight-region start end))
-      (setq itsf/vterm-target-buffer target)
+      (setq itsf/ghostel-target-buffer target)
       ;; Show the buffer if not visible
       (unless (get-buffer-window target t)
         (pop-to-buffer target))
       (with-current-buffer target
-        (vterm-send-string input)
-        (vterm-send-return))))
+        (ghostel-send-string input)
+        (ghostel-send-key "return"))))
 
 
-  (spacemacs/set-leader-keys "ot" 'itsf/start-vterm-numbered)
+  (spacemacs/set-leader-keys "ot" 'itsf/start-ghostel-numbered)
   (spacemacs/set-leader-keys "oc" 'itsf/start-console-flightctl)
   (spacemacs/set-leader-keys "op" 'itsf/start-psql-flightctl)
-  (spacemacs/set-leader-keys "ov" 'itsf/send-region-to-vterm)
+  (spacemacs/set-leader-keys "ov" 'itsf/send-region-to-ghostel)
 
   (use-package gptel
     :defer t
