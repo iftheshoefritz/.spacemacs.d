@@ -22,6 +22,10 @@ oauth2-auto.plist
 oauth2-auto.plist~
 *.plstore
 
+# ghostel's native module (platform-specific dylib + version sidecar), kept here
+# via `ghostel-module-directory' so package upgrades don't delete a mapped dylib.
+ghostel-module/
+
 # Byte-compiled / native-compiled artifacts
 *.elc
 *.eln

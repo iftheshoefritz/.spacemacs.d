@@ -154,12 +154,6 @@ This function should only modify configuration layer settings."
                                                            :files ("*.el")))
                                       org-gcal
                                       async
-                                      (ghostel :location (recipe
-                                                          :fetcher github
-                                                          :repo "dakra/ghostel"
-                                                          :branch "evil-ghostel-rewrite"
-                                                          :files ("lisp/*.el"
-                                                                  ("etc/terminfo" "etc/terminfo"))))
                                       )
 
    ;; A list of packages that cannot be updated.
@@ -681,6 +675,15 @@ If you are unsure, try setting them in `dotspacemacs/user-config' first."
   ;; Settings we deliberately care about are kept as code below / in user-config.
   (setq custom-file (expand-file-name "custom.el" dotspacemacs-directory))
   (when (file-exists-p custom-file) (load custom-file))
+  ;; Keep ghostel's native module outside elpa/ so a package upgrade can't delete
+  ;; a dylib this Emacs already has mapped. Must be set here rather than in
+  ;; `dotspacemacs/user-config': installing/byte-compiling ghostel loads it, and
+  ;; `ghostel--load-module' warns against `ghostel--module-directory' at that
+  ;; point -- too early for user-config to have redirected it.
+  ;; `download' rather than the default `ask' because the daemon has no one to
+  ;; answer the prompt.
+  (setq ghostel-module-directory (expand-file-name "ghostel-module/" dotspacemacs-directory)
+        ghostel-module-auto-install 'download)
   )
 
 (defun dotspacemacs/user-config ()
@@ -979,36 +982,16 @@ topmost headings in the region start at column 0."
           (javascript-backend . lsp)))
   (custom-set-faces
    '(highlight-parentheses-highlight ((nil (:weight ultra-bold))) t))
-  ;; The Spacemacs shell layer has no ghostel support, so `shell-default-shell'
-  ;; set to 'ghostel leaves `spacemacs/default-pop-shell' (SPC ') calling a
-  ;; nonexistent `spacemacs/shell-pop-ghostel'. Define it the same way the layer
-  ;; defines the vterm one. The "ghostel" name matters: shell-pop dispatches its
-  ;; autocd on that string (`shell-pop--cd-to-cwd-ghostel'), and it renames the
-  ;; created buffer to *ghostel-N*, which also stops ghostel's OSC-2 title
-  ;; tracking from renaming it afterwards.
-  ;; `projectile-run-ghostel' (SPC p ') already exists upstream in projectile.
-  (make-shell-pop-command "ghostel" ghostel)
-  (spacemacs/set-leader-keys "atsg" 'spacemacs/shell-pop-ghostel)
-  (spacemacs/register-repl 'ghostel 'ghostel)
-
-  (with-eval-after-load 'ghostel
-    (setq ghostel-shell shell-default-term-shell)
-    (defun itsf/ghostel--terminfo-directory ()
-      (let* ((root (ghostel--resource-root))
-             (dir (and root (expand-file-name "etc/terminfo" root))))
-        (cond
-         ((and dir
-               (file-directory-p dir)
-               (or (file-readable-p (expand-file-name "78/xterm-ghostty" dir))
-                   (file-readable-p (expand-file-name "x/xterm-ghostty" dir))))
-          dir)
-         ((and dir
-               (file-directory-p (expand-file-name "terminfo" dir)))
-          (let ((nested (expand-file-name "terminfo" dir)))
-            (when (or (file-readable-p (expand-file-name "78/xterm-ghostty" nested))
-                      (file-readable-p (expand-file-name "x/xterm-ghostty" nested)))
-              nested))))))
-    (advice-add 'ghostel--terminfo-directory :override #'itsf/ghostel--terminfo-directory))
+  ;; ghostel setup lives in the Spacemacs shell layer as of upstream a10be2cb1:
+  ;; the `ghostel'/`evil-ghostel' packages, `spacemacs/shell-pop-ghostel' (so
+  ;; `shell-default-shell' set to 'ghostel works for SPC ' and SPC a t s g), the
+  ;; repl registration, and `ghostel-shell' from `shell-default-term-shell'.
+  ;; Don't re-pin ghostel in `dotspacemacs-additional-packages': the MELPA build
+  ;; bundles etc/terminfo where `ghostel--terminfo-directory' expects it, and
+  ;; evil-ghostel advises ghostel internals closely enough that the two have to
+  ;; be upgraded together -- a pinned ghostel plus the layer's evil-ghostel is
+  ;; void-function `ghostel-alt-screen-p' on every terminal buffer.
+  ;; `ghostel-module-directory' is set in `dotspacemacs/user-init'.
   (with-eval-after-load 'claude-code-ide
     (setq claude-code-ide-terminal-backend 'ghostel)
     (setq claude-code-ide-use-ide-diff nil))
