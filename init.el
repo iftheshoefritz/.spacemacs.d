@@ -126,6 +126,24 @@ This function should only modify configuration layer settings."
                         persp-autokill-buffer-on-remove 'kill-weak
                         )
      mermaid
+     ;; Folding only, for now. Emacs 30.2 ships no `ruby-mode' entry in
+     ;; `hs-special-modes-alist', so hideshow — and therefore evil's zc/zo —
+     ;; can fold paren sexps but not do/end, def/end or class/end in Ruby.
+     ;; ts-fold folds on the tree-sitter parse tree instead, and registers
+     ;; itself in `evil-fold-list' on activation, so zc just works.
+     ;;
+     ;; This is elisp-tree-sitter (a minor mode over `ruby-mode'), NOT built-in
+     ;; treesit: it leaves the major mode alone, so robe, rspec, rubocop and the
+     ;; ruby-on-rails layer — all of which hook `ruby-mode-hook' by name — keep
+     ;; working. `ruby-ts-mode' would silently lose the lot, because it derives
+     ;; from `ruby-base-mode', not `ruby-mode' (ruby-ts-mode.el:1151).
+     ;;
+     ;; Syntax highlighting is left off deliberately: adopt folding first and
+     ;; see whether tree-sitter-hl fights lsp-mode's font-lock before enabling
+     ;; it. Turn it on with `tree-sitter-syntax-highlight-enable' when ready.
+     (tree-sitter :variables
+                  tree-sitter-fold-enable t
+                  tree-sitter-syntax-highlight-enable nil)
      (llm-client :variables
                  llm-client-enable-gptel t)
      claude-code
@@ -967,6 +985,85 @@ topmost headings in the region start at column 0."
        '((side . right)
          (slot . 0)
          (window-width . 0.5)))))
+  ;; The tree-sitter layer treats fold indicators and folding as either/or
+  ;; (layers/+tools/tree-sitter/packages.el): when
+  ;; `tree-sitter-fold-indicators-enable' is non-nil it only hooks
+  ;; `ts-fold-indicators-mode' and never reaches its `global-ts-fold-mode' call.
+  ;; But `ts-fold-indicators--enable' just renders the fringe -- it's
+  ;; `ts-fold--enable' that registers ts-fold in `evil-fold-list'. Indicators
+  ;; alone therefore draw fold arrows while zc/zo still fall through to
+  ;; hideshow, which has no `ruby-mode' entry in Emacs 30.2 and so folds paren
+  ;; sexps but not do/end. Enable the fold mode alongside the indicators.
+  ;; Code buffers only. `ts-fold-range-alist' has an `org-mode' entry and
+  ;; tree-sitter turns on in org too, and `ts-fold--enable' pushes itself to the
+  ;; *front* of `evil-fold-list' -- so enabling it everywhere would make zc/za
+  ;; in org fold tree-sitter nodes instead of outline sections, shadowing the
+  ;; `(outline-mode outline-minor-mode org-mode markdown-mode)' entry. (TAB is
+  ;; unaffected either way; org-cycle is org's own binding, not evil's dispatch.)
+  (defun itsf/ts-fold-mode-in-code-buffers ()
+    "Enable `ts-fold-mode', but only where tree-sitter folding should win."
+    (when (derived-mode-p 'prog-mode)
+      (ts-fold-mode 1)))
+  (add-hook 'tree-sitter-after-on-hook #'itsf/ts-fold-mode-in-code-buffers)
+
+  ;; Toggle folds with `;'. Bound in ts-fold's own minor-mode map rather than
+  ;; `evil-normal-state-map', which would shadow plain major-mode bindings
+  ;; everywhere -- magit, for one, puts `magit-section-toggle' on TAB in
+  ;; `magit-mode-map' with no evil auxiliary override, so a global binding there
+  ;; silently breaks section toggling. Scoped this way it only exists in code
+  ;; buffers. The cost is `evil-repeat-find-char', whose reverse partner `,' is
+  ;; already the Spacemacs major-mode leader, so f/t repeat was one-directional
+  ;; anyway. z-prefixed folding (za/zc/zo/zR/zM) keeps working unchanged.
+  (with-eval-after-load 'ts-fold
+    (evil-define-minor-mode-key 'normal 'ts-fold-mode (kbd ";")
+      #'evil-toggle-fold))
+
+  ;; `ts-fold--foldable-node-at-pos' only walks *up* the parse tree from point
+  ;; (ts-fold.el:352). In Ruby that makes a block unfoldable from most of its
+  ;; own header line: for `group :development do', the ancestor chain at column
+  ;; 0 is identifier -> call -> program, because the `do_block' is a *sibling*
+  ;; subtree under the enclosing `call' and only starts at the `do' keyword. So
+  ;; zc worked with point on `do' and nowhere else on the line. vim folds the
+  ;; block on the current line, so fall back to scanning the line for one.
+  ;; Advising the lookup rather than the commands fixes zc/zo/za/zC together.
+  ;; Prefer a node that *starts* on the current line over whatever encloses
+  ;; point. Both halves matter: without the line scan, `group :development do'
+  ;; folds only from the `do' column; without the start-position filter, a
+  ;; nested hash line like `nested: {' walks straight up to the enclosing hash
+  ;; and folds the whole outer literal instead of the one under the cursor.
+  ;; Lines that open nothing (`gem "benchmark"') fall through to ORIG and close
+  ;; the innermost block containing point, which is what vim's zc does.
+  (defun itsf/ts-fold--foldable-node-on-line (orig &optional pos)
+    "Prefer the first foldable node starting on POS's line; else ORIG at POS."
+    (let ((pos (or pos (point))))
+      (or (save-excursion
+            (goto-char pos)
+            (let ((bol (line-beginning-position))
+                  (eol (line-end-position))
+                  (found nil))
+              (goto-char bol)
+              (while (and (not found) (< (point) eol))
+                (let ((node (funcall orig (point))))
+                  (when (and node (<= bol (tsc-node-start-position node) eol))
+                    (setq found node)))
+                (forward-char 1))
+              found))
+          (funcall orig pos))))
+  (with-eval-after-load 'ts-fold
+    (advice-add 'ts-fold--foldable-node-at-pos :around
+                #'itsf/ts-fold--foldable-node-on-line)
+    ;; `ts-fold-parsers-ruby' covers do/def/class/array but not brace forms, so
+    ;; big config hashes stay unfoldable. `hash' is the `{...}' literal (nested
+    ;; ones are just `hash' again, so they fold independently); `block' is the
+    ;; brace form of a block, `each { |i| ... }'. `ts-fold-range-seq' folds
+    ;; start+1..end-1, i.e. exactly between the braces.
+    (let ((rules (alist-get 'ruby-mode ts-fold-range-alist)))
+      (dolist (rule '((hash . ts-fold-range-seq)
+                      (block . ts-fold-range-seq)))
+        (unless (assq (car rule) rules)
+          (push rule rules)))
+      (setf (alist-get 'ruby-mode ts-fold-range-alist) rules)))
+
   (global-auto-revert-mode t)
   (with-eval-after-load "tramp"
     (add-to-list 'tramp-remote-path 'tramp-own-remote-path)
