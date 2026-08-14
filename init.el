@@ -1588,6 +1588,68 @@ the parent reverts the buffer if it's open and unmodified."
                   (not (process-live-p p)))
          (delete-process p)))))
 
+  ;; --- Rails routes.rb imenu -------------------------------------------------
+  ;; ruby-mode's `ruby-imenu-create-index' only knows class/module/def/alias, so
+  ;; a routes file (pure DSL) produces a completely empty `SPC j i' index. Index
+  ;; the routing DSL instead, keeping each line's own leading whitespace in the
+  ;; label so the nesting is visible in the helm list (same trick rspec-mode
+  ;; uses for describe/context/it).
+  (defvar itsf/rails-routes-imenu-re
+    (concat "^\\([ \t]*\\)"
+            "\\(namespace\\|scope\\|resources\\|resource\\|concern\\|constraints\\|"
+            "get\\|post\\|put\\|patch\\|delete\\|match\\|root\\|mount\\|draw\\)"
+            "\\_>[ \t]*\\(.*?\\)[ \t]*$")
+    "Matcher for Rails routing DSL calls: indent, keyword, remainder of line.")
+
+  (defun itsf/rails-routes-imenu-index ()
+    "Build a flat imenu index of Rails routes, indented to show nesting."
+    (let ((index nil))
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward itsf/rails-routes-imenu-re nil t)
+          (let* ((indent (replace-regexp-in-string "\t" "  " (match-string 1)))
+                 (kw     (match-string-no-properties 2))
+                 (rest   (match-string-no-properties 3))
+                 (pos    (match-beginning 2))
+                 (arg (if (string-match
+                           "\\`[ \t]*\\(?::\\([A-Za-z0-9_]+\\)\\|\"\\([^\"]+\\)\\|'\\([^']+\\)\\)" rest)
+                          (or (match-string 1 rest) (match-string 2 rest) (match-string 3 rest))
+                        (let ((s (string-trim
+                                  (replace-regexp-in-string "\\_<do\\_>.*\\'" "" rest))))
+                          (if (> (length s) 40) (concat (substring s 0 40) "...") s)))))
+            (push (cons (string-trim-right (format "%s%s %s" indent kw (or arg "")))
+                        pos)
+                  index))))
+      (nreverse index)))
+
+  (defun itsf/rails-routes-file-p ()
+    "Non-nil if the current buffer visits a Rails routes file."
+    (and buffer-file-name
+         (string-match-p "/config/\\(routes\\.rb\\'\\|routes/.*\\.rb\\'\\)" buffer-file-name)))
+
+  (defun itsf/rails-routes-setup-imenu ()
+    "Give Rails routes files a DSL-aware, indentation-preserving imenu index.
+Runs from `ruby-mode-hook'; also callable interactively to apply it to a
+buffer that was opened before this config was loaded."
+    (interactive)
+    (when (itsf/rails-routes-file-p)
+      ;; ruby-mode sets `imenu-create-index-function' to `ruby-imenu-create-index'
+      ;; (and ruby-ts-mode to `treesit-simple-imenu'), both of which ignore
+      ;; `imenu-generic-expression' -- so override the function itself.
+      (setq-local imenu-create-index-function #'itsf/rails-routes-imenu-index)
+      ;; Deeply nested entries would otherwise be chopped at 60 chars.
+      (setq-local imenu-max-item-length nil)
+      (setq-local imenu--index-alist nil)
+      ;; helm caches its own candidate list keyed on `buffer-modified-tick', so
+      ;; an index built before this hook ran (an empty one) would be served
+      ;; forever in an unmodified buffer. Invalidate it too.
+      (when (boundp 'helm-cached-imenu-tick)
+        (setq-local helm-cached-imenu-tick nil)
+        (setq-local helm-cached-imenu-candidates nil))))
+
+  (add-hook 'ruby-mode-hook    #'itsf/rails-routes-setup-imenu)
+  (add-hook 'ruby-ts-mode-hook #'itsf/rails-routes-setup-imenu)
+
   ;; Ensure org notifications start under both daemon and non-daemon launch
   (defun itsf/start-notifications ()
     (when (require 'org-alert nil t) (org-alert-enable))
