@@ -1214,8 +1214,147 @@ contains a gcal: link with the same entry-id as the agenda item."
     (setq inf-ruby-breakpoint-pattern
           (concat inf-ruby-breakpoint-pattern "\\|\\(irb\\(.*?\\)>\\)")))
 
-  (setq alert-default-style 'osx-notifier)
+  ;; Clickable org notifications. AppleScript's `display notification' (what
+  ;; alert's osx-notifier style uses) produces banners that do nothing when
+  ;; clicked; terminal-notifier can run a command on click, so route org-alert
+  ;; through it and have the click jump Emacs to the heading that fired.
+  (defvar itsf/terminal-notifier "/opt/homebrew/bin/terminal-notifier"
+    "Absolute path: the asdf shim of the same name is a dead gem stub.")
+
+  (defvar itsf/org-alert-location nil
+    "(FILE HEADING) of the entry `org-alert--dispatch' is currently notifying.")
+
+  (defvar itsf/org-notification-layout "agenda"
+    "Layout a clicked org notification opens the agenda in.")
+
+  (defun itsf/org-agenda-goto-entry (file heading)
+    "Put point on the agenda line for HEADING in FILE. Return non-nil if found.
+Agenda lines carry a marker back to their entry, so match on that rather
+than on the displayed text, which org decorates with times and categories."
+    (let ((target (file-truename file))
+          (found nil))
+      (goto-char (point-min))
+      (while (and (not found) (not (eobp)))
+        (let* ((m (or (org-get-at-bol 'org-hd-marker) (org-get-at-bol 'org-marker)))
+               (buf (and m (marker-buffer m)))
+               (mfile (and buf (buffer-file-name buf))))
+          (if (and mfile
+                   (string= target (file-truename mfile))
+                   (string= heading (org-with-point-at m
+                                      (substring-no-properties
+                                       (org-get-heading t t t t)))))
+              (setq found t)
+            (forward-line 1))))
+      (when found
+        (beginning-of-line)
+        (recenter))
+      found))
+
+  (defun itsf/org-goto-notification (file heading)
+    "Raise Emacs and show the agenda, point on the HEADING from FILE that fired.
+The entry's own buffer is a poor landing spot -- most reminders come from
+calendar.org, a sync dump rather than notes -- whereas the agenda line has
+RET/TAB back to the entry and the usual jump-to-notes bindings."
+    (let ((frame (or (seq-find #'display-graphic-p (frame-list)) (selected-frame))))
+      (select-frame-set-input-focus frame)
+      (when (bound-and-true-p persp-mode)
+        (persp-frame-switch itsf/org-notification-layout frame))
+      (let ((org-agenda-window-setup 'only-window))
+        (org-agenda-list))
+      (itsf/org-agenda-goto-entry file heading)))
+
+  (defun itsf/emacs-app-bundle ()
+    "Path of the running Emacs .app, or nil. Derived rather than hardcoded:
+/Applications/Emacs.app here is a broken stub, and the emacs-plus Cellar
+path carries a version number that moves on upgrade."
+    (let ((app (directory-file-name (expand-file-name "../.." invocation-directory))))
+      (and (string-suffix-p ".app" app) (file-directory-p app) app)))
+
+  (defvar itsf/org-alert-sound "Ping"
+    "Sound for the first banner of a burst. Names come from /System/Library/Sounds.")
+
+  (defvar itsf/org-alert-sound-gap 240
+    "Seconds of quiet before an entry may sound again.
+org-alert re-notifies every `org-alert-interval' seconds until its cutoff,
+so a gap of a few intervals keeps a repeat burst silent after its first
+banner while still sounding for a genuinely new reminder -- a second
+reminder later on the same meeting, or the same heading tomorrow.")
+
+  (defvar itsf/org-alert-last-notified (make-hash-table :test 'equal)
+    "Entry key -> last notification time, for `itsf/org-alert-sound-p'.")
+
+  (defun itsf/org-alert-sound-p (key)
+    "Whether KEY should sound now. Records this notification either way."
+    (let* ((now (float-time))
+           (last (gethash key itsf/org-alert-last-notified)))
+      (maphash (lambda (k time)
+                 (when (> (- now time) 86400)
+                   (remhash k itsf/org-alert-last-notified)))
+               itsf/org-alert-last-notified)
+      (puthash key now itsf/org-alert-last-notified)
+      (or (null last) (> (- now last) itsf/org-alert-sound-gap))))
+
+  (defvar itsf/org-alert-icon (expand-file-name "emacs-logo.png" dotspacemacs-directory)
+    "Logo shown on org banners, checked into this repo alongside init.el.
+macOS ignores -appIcon since Big Sur, so the logo rides along as
+-contentImage, which needs an image file rather than the app's icns.")
+
+  (defun itsf/alert-terminal-notifier (info)
+    "Notify via terminal-notifier, clickable when INFO came from an org entry."
+    (let* ((loc itsf/org-alert-location)
+           (file (car loc))
+           (heading (cadr loc))
+           (key (if file (concat file "\0" heading) "emacs"))
+           (icon (and (file-exists-p itsf/org-alert-icon) itsf/org-alert-icon))
+           (args (append
+                  (list "-title"   (format "%s" (or (plist-get info :title) "Emacs"))
+                        "-message" (or (plist-get info :message) "")
+                        ;; no -sender: attributing the banner to another app
+                        ;; makes macOS activate that app on click and drop
+                        ;; -execute, which is the whole point here
+                        ;; group per heading: a repeated reminder replaces its
+                        ;; predecessor instead of stacking up in the centre
+                        "-group"   (secure-hash 'md5 key))
+                  (when icon (list "-contentImage" icon))
+                  (when (and itsf/org-alert-sound (itsf/org-alert-sound-p key))
+                    (list "-sound" itsf/org-alert-sound))
+                  (when file
+                    (list "-execute"
+                          ;; `open -a' runs after emacsclient returns, so Emacs
+                          ;; takes focus last. Activating from inside Emacs
+                          ;; races terminal-notifier's own activation and
+                          ;; loses: the agenda appears but the keyboard stays
+                          ;; wherever it was.
+                          (concat
+                           (format "%s -e %s >/dev/null 2>&1"
+                                   (shell-quote-argument
+                                    (or (executable-find "emacsclient")
+                                        "/opt/homebrew/bin/emacsclient"))
+                                   (shell-quote-argument
+                                    (format "(itsf/org-goto-notification %S %S)"
+                                            file heading)))
+                           (when-let ((app (itsf/emacs-app-bundle)))
+                             (format "; /usr/bin/open -a %s"
+                                     (shell-quote-argument app)))))))))
+      (apply #'call-process itsf/terminal-notifier nil 0 nil args)))
+
+  (alert-define-style 'itsf/clickable
+                      :title "Clickable macOS notification via terminal-notifier"
+                      :notifier #'itsf/alert-terminal-notifier)
+
+  (defun itsf/org-alert-capture-location (orig &rest args)
+    "Record where ORIG is notifying from, for `itsf/alert-terminal-notifier'."
+    (let ((itsf/org-alert-location
+           (list (buffer-file-name (buffer-base-buffer))
+               ;; unpropertized: this string gets printed into a shell command
+               (substring-no-properties (org-get-heading t t t t)))))
+      (apply orig args)))
+
+  (setq alert-default-style (if (file-executable-p itsf/terminal-notifier)
+                                'itsf/clickable
+                              'osx-notifier))
   (with-eval-after-load 'org-alert
+    (advice-add 'org-alert--dispatch :around #'itsf/org-alert-capture-location)
     (setq org-alert-interval 30
           org-alert-notify-cutoff 8
           org-alert-notify-after-event-cutoff 2
