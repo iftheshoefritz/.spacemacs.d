@@ -1094,6 +1094,19 @@ topmost headings in the region start at column 0."
   ;; be upgraded together -- a pinned ghostel plus the layer's evil-ghostel is
   ;; void-function `ghostel-alt-screen-p' on every terminal buffer.
   ;; `ghostel-module-directory' is set in `dotspacemacs/user-init'.
+  ;;
+  ;; avoid warnings from minimum-version ghostel bumps that are actually correct
+  ;; by downloading at startup before loading is checked. Real faults (module
+  ;; missing, load failure) still warn.
+  (if (featurep 'ghostel)
+      (message "ghostel loaded before user-config; module refresh skipped")
+    (when (require 'ghostel-module-install nil t)
+      (let* ((dir (ghostel--module-directory))
+             (ver (ghostel--read-module-sidecar-version dir)))
+        (when (and ver (version< ver ghostel--minimum-module-version))
+          (message "Refreshing ghostel module %s -> %s"
+                   ver ghostel--minimum-module-version)
+          (ghostel--ensure-module dir)))))
   (with-eval-after-load 'claude-code-ide
     (setq claude-code-ide-terminal-backend 'ghostel)
     (setq claude-code-ide-use-ide-diff nil))
