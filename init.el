@@ -1338,6 +1338,7 @@ macOS ignores -appIcon since Big Sur, so the logo rides along as
                                      (shell-quote-argument app)))))))))
       (apply #'call-process itsf/terminal-notifier nil 0 nil args)))
 
+  (require 'alert)
   (alert-define-style 'itsf/clickable
                       :title "Clickable macOS notification via terminal-notifier"
                       :notifier #'itsf/alert-terminal-notifier)
