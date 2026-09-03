@@ -687,6 +687,11 @@ If you are unsure, try setting them in `dotspacemacs/user-config' first."
   (setq exec-path-from-shell-arguments '("-l" "-i"))
   (setq evil-want-minibuffer t) ; allow normal/evil mode in minibuffer
   (setq evil-want-Y-yank-to-eol nil)
+  ;; `warning-suppress-types' still allows warnings to be written to *Warnings*,
+  ;; so the log stays complete; it only stops the window from jumping up. This
+  ;; prevents me from being bothered by nativecomp warnings that occur despite
+  ;; emacs working correctly.
+  (add-to-list 'warning-suppress-types '(native-compiler))
   ;; Redirect auto-generated Customize churn (org-agenda-files,
   ;; package-selected-packages, ...) out of this file and into a gitignored
   ;; custom.el, so the versioned config stays clean and free of private paths.
