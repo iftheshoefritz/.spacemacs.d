@@ -1283,8 +1283,8 @@ RET/TAB back to the entry and the usual jump-to-notes bindings."
 
   (defun itsf/emacs-app-bundle ()
     "Path of the running Emacs .app, or nil. Derived rather than hardcoded:
-/Applications/Emacs.app here is a broken stub, and the emacs-plus Cellar
-path carries a version number that moves on upgrade."
+there is no /Applications/Emacs.app, and the emacs-plus Cellar path
+carries a version number that moves on upgrade."
     (let ((app (directory-file-name (expand-file-name "../.." invocation-directory))))
       (and (string-suffix-p ".app" app) (file-directory-p app) app)))
 
