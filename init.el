@@ -1369,11 +1369,51 @@ macOS ignores -appIcon since Big Sur, so the logo rides along as
                (substring-no-properties (org-get-heading t t t t)))))
       (apply orig args)))
 
+  (defun itsf/org-alert-candidate-files ()
+    "Agenda files that hold a SCHEDULED or DEADLINE timestamp dated today.
+
+`org-alert-match-string' compares the stored timestamp text, and
+`org-map-entries' does not project repeaters forward, so an entry matches
+only when its timestamp literally carries today's date. A plain regexp pass
+is an exact prefilter, not an approximation: it drops no entry that
+org-alert can return.
+
+The pass reads every agenda file. A regexp search is much cheaper than a
+tags match, so a file this rules out costs far less than a file it keeps."
+    (let ((re (concat "^[ \t]*\\(?:SCHEDULED\\|DEADLINE\\):.*<"
+                      (format-time-string "%Y-%m-%d")))
+          (files nil))
+      (dolist (file (org-agenda-files) (nreverse files))
+        (let ((buf (get-file-buffer file)))
+          (if buf
+              ;; Search the buffer, not the file: an open buffer can be
+              ;; narrowed, and can hold a timestamp that is not saved yet.
+              (with-current-buffer buf
+                (save-excursion
+                  (save-restriction
+                    (widen)
+                    (goto-char (point-min))
+                    (when (re-search-forward re nil t) (push file files)))))
+            (with-temp-buffer
+              (when (ignore-errors (insert-file-contents file) t)
+                (goto-char (point-min))
+                (when (re-search-forward re nil t) (push file files)))))))))
+
+  (defun itsf/org-alert-scope-to-candidates (orig &rest args)
+    "Run ORIG over `itsf/org-alert-candidate-files' rather than every agenda file.
+Binds `org-agenda-files' instead of calling `org-map-entries' here, so
+org-alert keeps ownership of its match string and its skip form. A day with
+no timed entry leaves the list empty, and then `org-map-entries' visits
+nothing at all."
+    (let ((org-agenda-files (itsf/org-alert-candidate-files)))
+      (apply orig args)))
+
   (setq alert-default-style (if (file-executable-p itsf/terminal-notifier)
                                 'itsf/clickable
                               'osx-notifier))
   (with-eval-after-load 'org-alert
     (advice-add 'org-alert--dispatch :around #'itsf/org-alert-capture-location)
+    (advice-add 'org-alert--map-entries :around #'itsf/org-alert-scope-to-candidates)
     (setq org-alert-interval 30
           org-alert-notify-cutoff 8
           org-alert-notify-after-event-cutoff 2
