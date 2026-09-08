@@ -1369,6 +1369,35 @@ macOS ignores -appIcon since Big Sur, so the logo rides along as
                (substring-no-properties (org-get-heading t t t t)))))
       (apply orig args)))
 
+  (defvar itsf/org-alert--scan-cache (make-hash-table :test 'equal)
+    "Cache for `itsf/org-alert-candidate-files'.
+Keys are file names. Each value is (DAY MTIME SIZE MATCH-P). A file is
+re-read only when its day, modification time, or size differs.")
+
+  (defun itsf/org-alert--file-matches-p (file re day)
+    "Non-nil when FILE holds a timestamp that RE matches, for DAY.
+Re-reads FILE only when the cached entry is for another day, or the file
+changed on disk. `insert-file-contents-literally' skips coding detection and
+the file name handlers, so `set-auto-coding' does not run editorconfig on
+every agenda file. RE matches plain ASCII, so raw bytes are enough."
+    (let* ((attrs (file-attributes file))
+           (mtime (and attrs (file-attribute-modification-time attrs)))
+           (size (and attrs (file-attribute-size attrs)))
+           (hit (gethash file itsf/org-alert--scan-cache)))
+      (if (and hit attrs
+               (equal (nth 0 hit) day)
+               (equal (nth 1 hit) mtime)
+               (equal (nth 2 hit) size))
+          (nth 3 hit)
+        (let ((match
+               (and attrs
+                    (with-temp-buffer
+                      (when (ignore-errors (insert-file-contents-literally file) t)
+                        (goto-char (point-min))
+                        (and (re-search-forward re nil t) t))))))
+          (puthash file (list day mtime size match) itsf/org-alert--scan-cache)
+          match))))
+
   (defun itsf/org-alert-candidate-files ()
     "Agenda files that hold a SCHEDULED or DEADLINE timestamp dated today.
 
@@ -1378,26 +1407,28 @@ only when its timestamp literally carries today's date. A plain regexp pass
 is an exact prefilter, not an approximation: it drops no entry that
 org-alert can return.
 
-The pass reads every agenda file. A regexp search is much cheaper than a
-tags match, so a file this rules out costs far less than a file it keeps."
+The pass covers every agenda file, but reads only the ones that changed
+since the last run. A file that did not change costs one `file-attributes'
+call. Without that cache the check read about 36 MB every 30 seconds, which
+paused the editor twice a minute."
     (let ((re (concat "^[ \t]*\\(?:SCHEDULED\\|DEADLINE\\):.*<"
                       (format-time-string "%Y-%m-%d")))
+          (day (format-time-string "%Y-%m-%d"))
           (files nil))
       (dolist (file (org-agenda-files) (nreverse files))
         (let ((buf (get-file-buffer file)))
           (if buf
               ;; Search the buffer, not the file: an open buffer can be
               ;; narrowed, and can hold a timestamp that is not saved yet.
+              ;; A buffer costs no disk read, so it needs no cache.
               (with-current-buffer buf
                 (save-excursion
                   (save-restriction
                     (widen)
                     (goto-char (point-min))
                     (when (re-search-forward re nil t) (push file files)))))
-            (with-temp-buffer
-              (when (ignore-errors (insert-file-contents file) t)
-                (goto-char (point-min))
-                (when (re-search-forward re nil t) (push file files)))))))))
+            (when (itsf/org-alert--file-matches-p file re day)
+              (push file files)))))))
 
   (defun itsf/org-alert-scope-to-candidates (orig &rest args)
     "Run ORIG over `itsf/org-alert-candidate-files' rather than every agenda file.
