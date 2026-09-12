@@ -1011,6 +1011,20 @@ topmost headings in the region start at column 0."
       (ts-fold-mode 1)))
   (add-hook 'tree-sitter-after-on-hook #'itsf/ts-fold-mode-in-code-buffers)
 
+  ;; Keep tree-sitter out of org buffers. `global-tree-sitter-mode' turns
+  ;; tree-sitter on wherever `tree-sitter-major-mode-language-table' names a
+  ;; grammar, and tree-sitter-langs maps `org-mode' to the org grammar. So every
+  ;; org buffer got a parser, and `tree-sitter--after-change' reparsed it on
+  ;; every keystroke. In a 347 KB notes file that cost 0.36s per character: 20
+  ;; characters took 7.19s with tree-sitter and 0.004s without it.
+  ;;
+  ;; Nothing here uses that parse tree. `tree-sitter-syntax-highlight-enable' is
+  ;; nil, and `itsf/ts-fold-mode-in-code-buffers' above limits ts-fold to
+  ;; `prog-mode'. Dropping the org entry leaves every code buffer untouched.
+  (with-eval-after-load 'tree-sitter-langs
+    (when (hash-table-p tree-sitter-major-mode-language-table)
+      (remhash 'org-mode tree-sitter-major-mode-language-table)))
+
   ;; Toggle folds with `;'. Bound in ts-fold's own minor-mode map rather than
   ;; `evil-normal-state-map', which would shadow plain major-mode bindings
   ;; everywhere -- magit, for one, puts `magit-section-toggle' on TAB in
