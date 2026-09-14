@@ -1084,6 +1084,27 @@ topmost headings in the region start at column 0."
       (setf (alist-get 'ruby-mode ts-fold-range-alist) rules)))
 
   (global-auto-revert-mode t)
+  ;; Stop the 5-second poll. `auto-revert-use-notify' is already t, so
+  ;; auto-revert opens a kqueue watch per buffer anyway: 263 of 264 file
+  ;; buffers held one when this was measured. With `auto-revert-avoid-polling'
+  ;; nil, Emacs uses those watches AND still walks every buffer every
+  ;; `auto-revert-interval' seconds. With 315 buffers open that walk cost about
+  ;; 0.35s and was 61% of the daemon's CPU. Setting this to t drops the walk,
+  ;; keeps the watches, and opens no new file descriptors.
+  ;;
+  ;; A watch is bound to the inode, so a process that replaces a file by rename
+  ;; (Dropbox, git checkout, any atomic save) kills it. That is handled:
+  ;; filenotify sends `stopped', auto-revert clears the descriptor, and
+  ;; `auto-revert--polled-buffers' still polls any buffer that has no
+  ;; descriptor, even under this setting. The buffer then re-arms its watch.
+  ;;
+  ;; The real gap, and the reason Emacs keeps this nil by default, is a network
+  ;; mount changed from another computer: the local kernel sees nothing, so no
+  ;; event and no fallback ever fire. ~/Dropbox is plain local APFS, so it does
+  ;; not apply here. If a notes directory ever moves to NFS or SMB, add it to
+  ;; `auto-revert-notify-exclude-dir-regexp' and that directory goes back to
+  ;; polling while everything else keeps using notifications.
+  (setq auto-revert-avoid-polling t)
   (with-eval-after-load "tramp"
     (add-to-list 'tramp-remote-path 'tramp-own-remote-path)
     (add-to-list 'tramp-remote-path "/workspaces/dev-environment/bin"))
