@@ -172,6 +172,7 @@ This function should only modify configuration layer settings."
                                                            :files ("*.el")))
                                       org-gcal
                                       async
+                                      gcmh
                                       )
 
    ;; A list of packages that cannot be updated.
@@ -733,6 +734,17 @@ before packages are loaded."
     (when (file-exists-p paths-file)
       (load paths-file)))
   (setq org-roam-directory itsf/org-roam-directory)
+  ;; A full GC in this daemon takes about 1 s (large heap: many ghostel and
+  ;; claude-code buffers), so hold GC off while commands run and collect after
+  ;; 15 s without one. The idle threshold stays at `dotspacemacs-gc-cons', not
+  ;; gcmh's 800 KB default: Claude output keeps allocating in ghostel buffers
+  ;; while nobody types, and 800 KB would GC far more often than before.
+  ;; Spacemacs re-applies `dotspacemacs-gc-cons' after user-config; the first
+  ;; command puts the high threshold back.
+  (setq gcmh-high-cons-threshold (* 1024 1024 1024)
+        gcmh-low-cons-threshold (car dotspacemacs-gc-cons)
+        gcmh-idle-delay 15)
+  (gcmh-mode 1)
   (defun itsf/frame-killer-with-save ()
     "Offer to save modified file-visiting buffers, then close the frame."
     (interactive)
