@@ -1824,28 +1824,84 @@ the parent reverts the buffer if it's open and unmodified."
                ;; calendar.org is exactly as it was.
                (backup (expand-file-name "org-gcal-calendar-backup.org"
                                          temporary-file-directory))
-               (start (current-time)) (done nil) (result "ok"))
+               (start (current-time)) (done nil) (result "ok")
+               ;; Count the events Google actually handed us, so a silent
+               ;; truncation shows up in the status line instead of looking
+               ;; like a clean run. See the fetched=N field in the report.
+               (fetched 0))
+          (advice-add 'org-gcal--sync-handle-events :before
+                      (lambda (_cid _file events &rest _)
+                        (setq fetched (+ fetched (length events)))))
           (when (file-exists-p calfile) (copy-file calfile backup t t))
           (itsf/org-gcal-prune-fetch-window)
+          ;; Rebuild the :entry-id: index *after* the prune, so the cached
+          ;; locations can't hand org-gcal a marker for an entry the prune
+          ;; just deleted.
+          (org-generic-id-update-id-locations org-gcal-entry-id-property)
+          ;; Await `org-gcal--sync-calendar' rather than calling
+          ;; `org-gcal-sync'. `org-gcal-sync' wraps the fetch in
+          ;;   (deferred:$ (org-gcal--sync-calendar ...)
+          ;;               (deferred:succeed nil)
+          ;;               (deferred:nextc it ...))
+          ;; and the middle form makes a fresh, already-resolved deferred
+          ;; instead of chaining onto `it'. That throws the fetch deferred
+          ;; away: `org-gcal-sync' reports success as soon as its own
+          ;; post-fetch pass finishes, while the fetch is still in flight.
+          ;; Google returns at most 250 events per page (maxResults default),
+          ;; and this window holds ~400, so page 2 was requested but its
+          ;; response was never processed before the child exited. Every event
+          ;; past the first page silently vanished from calendar.org on each
+          ;; run — and because the prune wipes the window first, they stayed
+          ;; gone. `org-gcal--sync-calendar' is a correctly chained deferred,
+          ;; so awaiting it directly paginates to completion. It also skips
+          ;; `org-gcal-sync-buffer', which is a redundant Org->Google
+          ;; reconciliation pass for a one-way, prune-and-replace fetch.
           (deferred:try
-           (org-gcal-sync t t)
+           (deferred:loop org-gcal-fetch-file-alist
+             (lambda (cal)
+               (org-gcal--sync-calendar cal t t (org-gcal--up-time)
+                                        (org-gcal--down-time))))
            :catch   (lambda (e) (setq result (format "error: %S" e)))
            :finally (lambda () (setq done t)))
           (with-timeout (180 (setq result "timeout") (setq done t))
             (while (not done) (accept-process-output nil 0.2)))
-          ;; Drain: org-gcal-sync's main deferred resolves after dispatching
-          ;; the post-fetch sync-buffer mapc, but its sub-deferreds (per-entry
-          ;; updates that fire the SCHEDULED hook) keep running. Pump the
-          ;; event loop a few more seconds so they finish in the child instead
-          ;; of being abandoned on exit.
+          ;; Drain: new events are inserted synchronously, but entries that
+          ;; already existed are updated through sub-deferreds (which also
+          ;; fire the SCHEDULED hook). Pump the event loop a few more seconds
+          ;; so those finish in the child instead of being abandoned on exit.
           (let ((drain-end (+ (float-time) 5.0)))
             (while (< (float-time) drain-end)
               (accept-process-output nil 0.2)))
           (save-some-buffers t)
+          ;; Truncation guard. The prune wipes the fetch window and trusts the
+          ;; sync to refill it, so a sync that returns "ok" after handling only
+          ;; part of the window deletes real events. Count the managed entries
+          ;; now in the window and compare with the events Google handed us: a
+          ;; large shortfall means the refill did not complete, so treat the
+          ;; run as failed and let the rollback below restore the backup.
+          (let ((written
+                 (with-current-buffer (find-file-noselect calfile)
+                   (org-with-wide-buffer
+                    (let ((n 0) (up (org-gcal--up-time)) (down (org-gcal--down-time)))
+                      (org-map-entries
+                       (lambda ()
+                         (let ((sched (org-get-scheduled-time (point))))
+                           (when (and sched
+                                      (string= (org-entry-get (point)
+                                                              org-gcal-managed-property)
+                                               "gcal")
+                                      (not (time-less-p sched up))
+                                      (not (time-less-p down sched)))
+                             (setq n (1+ n)))))
+                       nil 'file)
+                      n)))))
+            (if (and (string= result "ok") (> fetched 0) (< written (- fetched 25)))
+                (setq result (format "TRUNCATED · fetched %d, wrote %d" fetched written))
+              (setq result (format "%s · fetched %d, wrote %d" result fetched written))))
           ;; Roll back after the save, not instead of it: org-gcal may already
           ;; have written a partial window to disk during the sync, so the only
           ;; reliable undo is to put the pre-prune file back.
-          (unless (string= result "ok")
+          (unless (string-prefix-p "ok" result)
             (when (file-exists-p backup)
               (copy-file backup calfile t t)
               (setq result (concat result " · rolled back"))))
