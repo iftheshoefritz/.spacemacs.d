@@ -1545,6 +1545,15 @@ OWNER can be a substring, e.g., \"fritz\" will match \"iftheshoefritz\"."
 
       (advice-add 'forge-visit-this-topic :around #'my-forge-visit-advice)))
 
+  (with-eval-after-load 'magit
+    (remove-hook 'magit-status-headers-hook 'magit-insert-tags-header))
+  (with-eval-after-load 'forge
+    (remove-hook 'magit-status-sections-hook 'forge-insert-pullreqs)
+    (remove-hook 'magit-status-sections-hook 'forge-insert-issues)
+    (remove-hook 'magit-status-sections-hook 'forge-insert-discussions))
+  (spacemacs/set-leader-keys "gP" 'forge-list-pullreqs)
+  (spacemacs/set-leader-keys "gI" 'forge-list-issues)
+
   (use-package mcp
     :defer t
     :after gptel
