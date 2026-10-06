@@ -1167,6 +1167,22 @@ topmost headings in the region start at column 0."
     (require 'helm-buffers)
     (let ((helm-buffer-list-reorder-fn #'helm-buffers-reorder-buffer-list))
       (helm-mini)))
+  ;; Override spacemacs//helm-do-ag-region-or-symbol so its temporary
+  ;; thing-at-point accepts the optional NO-PROPERTIES argument.
+  (defun spacemacs//helm-do-ag-region-or-symbol (func &optional dir)
+    "Search with `ag' with a default input."
+    (require 'helm-ag)
+    (cl-letf* (((symbol-value 'helm-ag-insert-at-point) 'symbol)
+               ;; make thing-at-point choosing the active region first
+               ((symbol-function 'this-fn) (symbol-function 'thing-at-point))
+               ((symbol-function 'thing-at-point)
+                (lambda (thing &optional no-properties)
+                  (let ((res (if (region-active-p)
+                                 (buffer-substring-no-properties
+                                  (region-beginning) (region-end))
+                               (this-fn thing no-properties))))
+                    (when res (rxt-quote-pcre res))))))
+      (funcall func dir)))
   ;;(setq org-columns-default-format "%50ITEM %TODO %CLOSED")
   (defun my/skip-non-todo-past-scheduled ()
     "Skip non-TODO entries showing as overdue (scheduled before the day being rendered)."
