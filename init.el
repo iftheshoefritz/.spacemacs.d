@@ -708,6 +708,15 @@ If you are unsure, try setting them in `dotspacemacs/user-config' first."
   ;; answer the prompt.
   (setq ghostel-module-directory (expand-file-name "ghostel-module/" dotspacemacs-directory)
         ghostel-module-auto-install 'download)
+  ;; Spacemacs evilifies these maps, and evil's `G' (go to end) wins over the
+  ;; chgrp command on `G'. Evilification has no free key for chgrp, so it
+  ;; prints "could not remap" on each start. Unbind `G' first to drop chgrp
+  ;; quietly. These hooks must be registered here, before the
+  ;; spacemacs-defaults layer registers its own, so they run first. They must
+  ;; also use the same feature as the layer: arc-mode.el provides
+  ;; `archive-mode' before `arc-mode'.
+  (with-eval-after-load 'archive-mode (define-key archive-mode-map "G" nil))
+  (with-eval-after-load 'tar-mode (define-key tar-mode-map "G" nil))
   )
 
 (defun dotspacemacs/user-config ()
