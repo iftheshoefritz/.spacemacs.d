@@ -680,6 +680,9 @@ configuration.
 It is mostly for variables that should be set before packages are loaded.
 If you are unsure, try setting them in `dotspacemacs/user-config' first."
   (setq-default git-magit-status-fullscreen t)
+  ;; Refuse bad TLS certificates instead of prompting, so a MITM on untrusted
+  ;; wifi cannot slip unsigned MELPA/quelpa packages past a careless "yes".
+  (setq gnutls-verify-error t)
   (setq insert-directory-program (substitute-in-file-name "/usr/local/bin/gls"))
   ;; Keep in step with `brew list --versions gcc` (and ~/bin/emacs-daemon):
   ;; Homebrew deletes the old cellar on a major bump, and this setenv overrides
