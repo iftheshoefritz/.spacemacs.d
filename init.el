@@ -1414,7 +1414,7 @@ macOS ignores -appIcon since Big Sur, so the logo rides along as
                                    (shell-quote-argument
                                     (format "(itsf/org-goto-notification %S %S)"
                                             file heading)))
-                           (when-let ((app (itsf/emacs-app-bundle)))
+                           (when-let* ((app (itsf/emacs-app-bundle)))
                              (format "; /usr/bin/open -a %s"
                                      (shell-quote-argument app)))))))))
       (apply #'call-process itsf/terminal-notifier nil 0 nil args)))
