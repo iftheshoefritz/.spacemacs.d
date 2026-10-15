@@ -690,6 +690,11 @@ If you are unsure, try setting them in `dotspacemacs/user-config' first."
   (setenv "CC" "/opt/homebrew/bin/gcc-16")
   (setq exec-path-from-shell-arguments '("-l" "-i"))
   (setq evil-want-minibuffer t) ; allow normal/evil mode in minibuffer
+  ;; Evil keeps `evil-local-mode' on in the reused " *Minibuf-N*" buffers, but
+  ;; Emacs 31 wipes the buffer-local insert `evil-default-state' that evil sets
+  ;; there, so each new minibuffer starts in normal state. Map the mode instead.
+  (with-eval-after-load 'evil
+    (evil-set-initial-state 'minibuffer-mode 'insert))
   (setq evil-want-Y-yank-to-eol nil)
   ;; `warning-suppress-types' still allows warnings to be written to *Warnings*,
   ;; so the log stays complete; it only stops the window from jumping up. This
